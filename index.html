@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UBER Q3 2026 Volatility Simulator</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#f5f7fa;color:#17202a}
+main{max-width:1100px;margin:auto;padding:24px}
+h1{margin-bottom:4px} .sub{color:#5d6d7e;margin-top:0}
+.grid{display:grid;grid-template-columns:340px 1fr;gap:20px}
+.card{background:white;border:1px solid #dfe6e9;border-radius:14px;padding:18px}
+label{display:block;font-weight:700;margin-top:12px}
+input[type=number],input[type=range]{width:100%;box-sizing:border-box;margin-top:6px}
+input[type=number]{padding:9px;border:1px solid #bcc6cc;border-radius:8px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}
+.metric{background:white;border:1px solid #dfe6e9;border-radius:12px;padding:12px}
+.metric b{display:block;font-size:20px;margin-top:4px}
+canvas{width:100%;height:390px;border:1px solid #dfe6e9;border-radius:10px}
+.note{font-size:13px;color:#5d6d7e;line-height:1.45}
+.good{color:#137333} .bad{color:#b3261e}
+@media(max-width:800px){.grid{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<main>
+<h1>UBER Q3 2026 Long-Volatility Simulator — 15 Sep 2026</h1>
+<p class="sub">Interactive payoff tool for an earnings-event straddle. All inputs are editable.</p>
+<div class="grid">
+<section class="card">
+<h2>Strategy inputs</h2>
+<label>Current UBER price ($)<input id="spot" type="number" min="1" step="0.01" value="71.43"></label>
+<label>Call strike ($)<input id="kc" type="number" min="1" step="0.5" value="71.00"></label>
+<label>Put strike ($)<input id="kp" type="number" min="1" step="0.5" value="71.00"></label>
+<label>Call premium ($)<input id="cp" type="number" min="0" step="0.01" value="2.82"></label>
+<label>Put premium ($)<input id="pp" type="number" min="0" step="0.01" value="2.82"></label>
+<label>Future UBER price: $<span id="futureLabel">71.00</span>
+<input id="future" type="range" min="35" max="105" step="0.5" value="71"></label>
+<p class="note">Valuation date: 15 September 2026 | UBER close: US$71.43 | $71 strike | 6 November 2026 expiry.</p>
+</section>
+<section class="card">
+<h2>Payoff at expiry</h2>
+<canvas id="chart" width="760" height="390" aria-label="Option payoff graph"></canvas>
+<p id="explain" class="note"></p>
+</section>
+</div>
+<div class="metrics">
+<div class="metric">Total premium / share<b id="premium"></b></div>
+<div class="metric">Max loss / package<b id="maxloss"></b></div>
+<div class="metric">Lower breakeven<b id="lower"></b></div>
+<div class="metric">Upper breakeven<b id="upper"></b></div>
+</div>
+<div class="card">
+<h2>Selected future-price outcome</h2>
+<p>Call intrinsic value: <b id="callPay"></b> &nbsp; Put intrinsic value: <b id="putPay"></b></p>
+<p>Net P/L per 100-share package: <b id="pnl"></b></p>
+<p class="note">If call and put strikes differ, the position becomes a strangle rather than a straddle. The graph and P/L still update, while the simple breakeven labels are calculated from the selected strikes and total premium.</p>
+</div>
+</main>
+<script>
+const ids=['spot','kc','kp','cp','pp','future'];
+const el=id=>document.getElementById(id);
+function money(x){return '$'+Number(x).toFixed(2)}
+function calc(st,kc,kp,cp,pp){return Math.max(st-kc,0)+Math.max(kp-st,0)-cp-pp}
+function update(){
+ const spot=+el('spot').value||0,kc=+el('kc').value||0,kp=+el('kp').value||0,cp=+el('cp').value||0,pp=+el('pp').value||0,st=+el('future').value||0;
+ const prem=cp+pp, lo=kp-prem, hi=kc+prem;
+ el('futureLabel').textContent=st.toFixed(2);
+ el('premium').textContent=money(prem);
+ el('maxloss').textContent=money(prem*100);
+ el('lower').textContent=money(lo);
+ el('upper').textContent=money(hi);
+ const call=Math.max(st-kc,0), put=Math.max(kp-st,0), pnl=calc(st,kc,kp,cp,pp)*100;
+ el('callPay').textContent=money(call);
+ el('putPay').textContent=money(put);
+ el('pnl').textContent=(pnl>=0?'+':'')+money(pnl);
+ el('pnl').className=pnl>=0?'good':'bad';
+ el('explain').textContent='The position needs a sufficiently large move away from the strike(s) to recover the combined premium. Around earnings, a post-event volatility crush can reduce option values before expiry even when the stock moves.';
+ draw(kc,kp,cp,pp,spot,st);
+}
+function draw(kc,kp,cp,pp,spot,selected){
+ const c=el('chart'),ctx=c.getContext('2d'),w=c.width,h=c.height;
+ ctx.clearRect(0,0,w,h);
+ const min=Math.max(1,spot*0.55),max=spot*1.45;
+ const vals=[]; let ymin=1e9,ymax=-1e9;
+ for(let i=0;i<=200;i++){let x=min+(max-min)*i/200,y=calc(x,kc,kp,cp,pp);vals.push([x,y]);ymin=Math.min(ymin,y);ymax=Math.max(ymax,y)}
+ ymin=Math.min(ymin,-1); ymax=Math.max(ymax,1); const pad=48;
+ const X=x=>pad+(x-min)/(max-min)*(w-2*pad),Y=y=>h-pad-(y-ymin)/(ymax-ymin)*(h-2*pad);
+ ctx.strokeStyle='#8b98a5';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pad,Y(0));ctx.lineTo(w-pad,Y(0));ctx.stroke();
+ ctx.fillStyle='#52606d';ctx.font='12px Arial';ctx.fillText('Profit',8,pad);ctx.fillText('Loss',8,h-pad);
+ ctx.strokeStyle='#1f5f99';ctx.lineWidth=3;ctx.beginPath();
+ vals.forEach((v,i)=>{if(i===0)ctx.moveTo(X(v[0]),Y(v[1]));else ctx.lineTo(X(v[0]),Y(v[1]))});ctx.stroke();
+ const py=calc(selected,kc,kp,cp,pp);ctx.fillStyle=py>=0?'#137333':'#b3261e';ctx.beginPath();ctx.arc(X(selected),Y(py),6,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#17202a';ctx.fillText('$'+min.toFixed(0),pad-10,h-20);ctx.fillText('$'+max.toFixed(0),w-pad-20,h-20);
+ ctx.fillText('UBER price at expiry',w/2-55,h-6);
+}
+ids.forEach(id=>el(id).addEventListener('input',update)); update();
+</script>
+</body></html>
